@@ -80,31 +80,39 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    self.view.backgroundColor=[UIColor whiteColor];
-    
     [self.view addSubview:self.authenticationBtn];
+    
+    if (self.delegate&&[self.delegate respondsToSelector:@selector(didUserAttempsReachLimits:)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.authenticationBtn.hidden=YES;
+        });
+    }
     
     self.authenticationBtn.translatesAutoresizingMaskIntoConstraints=NO;
     NSLayoutConstraint* verticalCenterConstraint=[NSLayoutConstraint constraintWithItem:self.view attribute:NSLayoutAttributeCenterY relatedBy:NSLayoutRelationEqual toItem:self.authenticationBtn attribute:NSLayoutAttributeCenterY multiplier:1.0 constant:0];
     NSLayoutConstraint* horizontalCenterConstraint=[NSLayoutConstraint constraintWithItem:self.view attribute:NSLayoutAttributeCenterX relatedBy:NSLayoutRelationEqual toItem:self.authenticationBtn attribute:NSLayoutAttributeCenterX multiplier:1.0 constant:0];
     [self.view addConstraints:@[verticalCenterConstraint,horizontalCenterConstraint]];
-
+    
     [self doTouchIDAuthentication];
 }
 
-- (BOOL)canTouchIDAuthentication
+- (BOOL)canTouchIDAuthenticationWithError:(NSError * __autoreleasing *)error
 {
-    NSAssert([[[UIDevice currentDevice] systemVersion] floatValue]>8.0,@"TouchID is not supported" );
-    NSError* error;
-    [self.authContext canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error];
-    if (error.code==LAErrorTouchIDNotAvailable) {
+    NSAssert([[[UIDevice currentDevice] systemVersion] floatValue]>=8.0,@"TouchID is not supported" );
+    
+    NSError * err;
+    [self.authContext canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&err];
+    if (err.code==LAErrorTouchIDNotAvailable||err.code==LAErrorTouchIDNotEnrolled) {
+        if (error) {
+            *error=err;
+        }
         return NO;
     }
     return YES;
 }
 
 - (void)doTouchIDAuthentication{
-    NSAssert([[[UIDevice currentDevice] systemVersion] floatValue]>8.0,@"TouchID is not supported" );
+    NSAssert([[[UIDevice currentDevice] systemVersion] floatValue]>=8.0,@"TouchID is not supported" );
     NSError* error;
     if ([self.authContext canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error]) {
         [self authenticateWithBiometrics];
@@ -171,6 +179,18 @@
                     if (weakSelf.delegate&&[weakSelf.delegate respondsToSelector:@selector(didUserCancleWithController:)]) {
                         dispatch_async(dispatch_get_main_queue(), ^{
                             [weakSelf.delegate didUserCancleWithController:self];
+                        });
+                    }
+                }
+                    break;
+                    
+                case -1:
+                case LAErrorTouchIDLockout:
+                {
+                    if (weakSelf.delegate&&[weakSelf.delegate respondsToSelector:@selector(didUserAttempsReachLimits:)]) {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            [weakSelf goBack];
+                            [weakSelf.delegate didUserAttempsReachLimits:self];
                         });
                     }
                 }
